@@ -20,7 +20,12 @@ namespace mlx::core {
 constexpr int METAL_MAX_INDEX_ARRAYS = 20;
 
 int kernel_block_pow2(MTL::ComputePipelineState* kernel) {
-  const auto max_threads = kernel->maxTotalThreadsPerThreadgroup();
+  // The debug layer can enforce a kernel-specific effective ceiling below the
+  // value returned by maxTotalThreadsPerThreadgroup (896 observed for Gemma 4
+  // gather_front while the property still returned 1024). Keep multidimensional
+  // Gather dispatch at the largest conservative power of two below that gap.
+  const auto max_threads = std::min<NS::UInteger>(
+      kernel->maxTotalThreadsPerThreadgroup(), 512);
   int pow2 = 0;
   while (pow2 < 10 && (size_t{1} << (pow2 + 1)) <= max_threads) {
     ++pow2;
