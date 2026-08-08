@@ -300,11 +300,26 @@ void CommandEncoder::maybeInsertBarrier() {
   next_outputs_.clear();
 }
 
+namespace {
+
+// Opt-in diagnostic. Reports any dispatch whose threadgroup exceeds the
+// compiled pipeline's reported maximum. Enable with MLX_LOG_OVERSIZED=1.
+bool mlx_log_oversized_dispatch() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("MLX_LOG_OVERSIZED");
+    return value != nullptr && value[0] == '1';
+  }();
+  return enabled;
+}
+
+} // namespace
+
 void CommandEncoder::dispatch_threadgroups(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
   auto group_size = group_dims.width * group_dims.height * group_dims.depth;
-  if (group_size >= 1024) {
+  if (mlx_log_oversized_dispatch() && current_kernel_ != nullptr &&
+      group_size > current_kernel_->maxTotalThreadsPerThreadgroup()) {
     Dl_info info{};
     dladdr(__builtin_return_address(0), &info);
     fprintf(
@@ -326,7 +341,8 @@ void CommandEncoder::dispatch_threads(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
   auto group_size = group_dims.width * group_dims.height * group_dims.depth;
-  if (group_size >= 1024) {
+  if (mlx_log_oversized_dispatch() && current_kernel_ != nullptr &&
+      group_size > current_kernel_->maxTotalThreadsPerThreadgroup()) {
     Dl_info info{};
     dladdr(__builtin_return_address(0), &info);
     fprintf(
