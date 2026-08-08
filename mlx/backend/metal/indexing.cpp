@@ -33,6 +33,28 @@ int kernel_block_pow2(MTL::ComputePipelineState* kernel) {
   return pow2;
 }
 
+MTL::Size gather_block_dims(
+    int dim0,
+    int dim1,
+    int dim2,
+    MTL::ComputePipelineState* kernel) {
+  auto block = get_block_dims(dim0, dim1, dim2, kernel_block_pow2(kernel));
+  auto width = block.width;
+  auto height = block.height;
+  auto depth = block.depth;
+  constexpr NS::UInteger safe_limit = 512;
+  while (width * height * depth > safe_limit) {
+    if (width >= height && width >= depth && width > 1) {
+      width /= 2;
+    } else if (height >= depth && height > 1) {
+      height /= 2;
+    } else {
+      depth /= 2;
+    }
+  }
+  return MTL::Size(width, height, depth);
+}
+
 std::pair<std::string, std::string> make_index_args(
     const std::string& idx_type,
     int nidx) {
@@ -113,8 +135,7 @@ void Gather::eval_gpu(const std::vector<array>& inputs, array& out) {
 
     size_t dim_x = (slice_size + work_per_thread - 1) / work_per_thread;
     size_t dim_y = indices.size();
-    auto group_dims =
-        get_block_dims(dim_x, dim_y, 1, kernel_block_pow2(kernel));
+    auto group_dims = gather_block_dims(dim_x, dim_y, 1, kernel);
     MTL::Size grid_dims = MTL::Size(dim_x, dim_y, 1);
 
     compute_encoder.set_input_array(src, 0);
@@ -178,8 +199,7 @@ void Gather::eval_gpu(const std::vector<array>& inputs, array& out) {
     }
   }
   size_t dim2 = slice_size;
-  auto group_dims =
-      get_block_dims(dim0, dim1, dim2, kernel_block_pow2(kernel));
+  auto group_dims = gather_block_dims(dim0, dim1, dim2, kernel);
   MTL::Size grid_dims = MTL::Size(dim0, dim1, dim2);
 
   // Collect all idx shapes and strides into one place
@@ -515,8 +535,8 @@ void GatherAxis::eval_gpu(const std::vector<array>& inputs, array& out) {
   }
 
   int idx_ax_size = idx.shape(axis_);
-  auto group_dims = get_block_dims(
-      size_post, idx_ax_size, size_pre, kernel_block_pow2(kernel));
+  auto group_dims =
+      gather_block_dims(size_post, idx_ax_size, size_pre, kernel);
   MTL::Size grid_dims = MTL::Size(size_post, idx_ax_size, size_pre);
 
   // Set all the buffers
