@@ -133,7 +133,7 @@ void RoPE::eval_gpu(
   if (single) {
     compute_encoder.set_bytes(out_strides, 1, 4);
     uint32_t dim0 = dims_ / 2;
-    group_dims = get_block_dims(dim0, N, 1);
+    group_dims = get_block_dims(dim0, N, 1, kernel);
     grid_dims = MTL::Size(dim0, N, 1);
   } else {
     compute_encoder.set_bytes(strides, 3, 4);
@@ -147,26 +147,9 @@ void RoPE::eval_gpu(
     uint32_t dim0 = dims_ / 2;
     uint32_t dim1 = T;
     uint32_t dim2 = B * ((N + n_per_thread - 1) / n_per_thread);
-    group_dims = get_block_dims(dim0, dim1, dim2);
+    group_dims = get_block_dims(dim0, dim1, dim2, kernel);
     grid_dims = MTL::Size(dim0, dim1, dim2);
   }
-
-  // Generated RoPE pipelines can report a threadgroup ceiling below the
-  // generic 1024-thread block chosen by get_block_dims.
-  auto group_width = group_dims.width;
-  auto group_height = group_dims.height;
-  auto group_depth = group_dims.depth;
-  const NS::UInteger safe_group_limit = kernel->maxTotalThreadsPerThreadgroup();
-  while (group_width * group_height * group_depth > safe_group_limit) {
-    if (group_width >= group_height && group_width >= group_depth && group_width > 1) {
-      group_width /= 2;
-    } else if (group_height >= group_depth && group_height > 1) {
-      group_height /= 2;
-    } else {
-      group_depth /= 2;
-    }
-  }
-  group_dims = MTL::Size(group_width, group_height, group_depth);
 
   if (with_freqs) {
     auto& freqs = inputs[2];

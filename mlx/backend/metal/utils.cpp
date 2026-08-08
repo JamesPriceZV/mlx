@@ -68,13 +68,34 @@ MTL::Size get_block_dims(
     int dim1,
     int dim2,
     MTL::ComputePipelineState* kernel) {
-  auto max_threads = std::min<NS::UInteger>(
+  const NS::UInteger max_threads = std::min<NS::UInteger>(
       kernel->maxTotalThreadsPerThreadgroup(), 1024);
   int pow2 = 0;
   while (pow2 < 10 && (size_t{1} << (pow2 + 1)) <= max_threads) {
     ++pow2;
   }
-  return get_block_dims(dim0, dim1, dim2, pow2);
+  auto block = get_block_dims(dim0, dim1, dim2, pow2);
+
+  // get_block_dims caps an exponent, not the product, and upstream treats the
+  // pow2 argument as advisory (ml-explore/mlx#4062, closed won't-fix), so the
+  // returned block can still exceed max_threads. Enforce the pipeline ceiling
+  // here so every caller of this overload is safe by construction and no call
+  // site needs its own clamp.
+  auto width = block.width;
+  auto height = block.height;
+  auto depth = block.depth;
+  while (width * height * depth > max_threads) {
+    if (width >= height && width >= depth && width > 1) {
+      width /= 2;
+    } else if (height >= depth && height > 1) {
+      height /= 2;
+    } else if (depth > 1) {
+      depth /= 2;
+    } else {
+      break;
+    }
+  }
+  return MTL::Size(width, height, depth);
 }
 
 MTL::Size get_2d_grid_dims(const Shape& shape, const Strides& strides) {
