@@ -54,7 +54,7 @@ void RMSNorm::eval_gpu(
 
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
-  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 256);
+  const int looped_limit = RMS_LOOPED_LIMIT;
   std::string op_name = "rms";
   if (axis_size > looped_limit) {
     op_name += "_looped";
@@ -74,8 +74,7 @@ void RMSNorm::eval_gpu(
       grid_dims = MTL::Size(n_threads, 1, 1);
       group_dims = MTL::Size(threadgroup_size, 1, 1);
     } else {
-      size_t threadgroup_size =
-          std::min<NS::UInteger>(kernel->maxTotalThreadsPerThreadgroup(), 512);
+      size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
       group_dims = MTL::Size(threadgroup_size, 1, 1);
@@ -153,7 +152,7 @@ void RMSNormVJP::eval_gpu(
 
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
-  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 256);
+  const int looped_limit = RMS_LOOPED_LIMIT;
   std::string op_name = "vjp_rms";
   if (axis_size > looped_limit) {
     op_name += "_looped";
@@ -179,8 +178,7 @@ void RMSNormVJP::eval_gpu(
       grid_dims = MTL::Size(n_threads, 1, 1);
       group_dims = MTL::Size(threadgroup_size, 1, 1);
     } else {
-      size_t threadgroup_size =
-          std::min<NS::UInteger>(kernel->maxTotalThreadsPerThreadgroup(), 512);
+      size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
       group_dims = MTL::Size(threadgroup_size, 1, 1);

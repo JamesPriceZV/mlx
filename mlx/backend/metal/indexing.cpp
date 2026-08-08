@@ -19,31 +19,20 @@ namespace mlx::core {
 
 constexpr int METAL_MAX_INDEX_ARRAYS = 20;
 
-int kernel_block_pow2(MTL::ComputePipelineState* kernel) {
-  // The debug layer can enforce a kernel-specific effective ceiling below the
-  // value returned by maxTotalThreadsPerThreadgroup (896 observed for Gemma 4
-  // gather_front while the property still returned 1024). Keep multidimensional
-  // Gather dispatch at the largest conservative power of two below that gap.
-  const auto max_threads = std::min<NS::UInteger>(
-      kernel->maxTotalThreadsPerThreadgroup(), 512);
-  int pow2 = 0;
-  while (pow2 < 10 && (size_t{1} << (pow2 + 1)) <= max_threads) {
-    ++pow2;
-  }
-  return pow2;
-}
-
 MTL::Size gather_block_dims(
     int dim0,
     int dim1,
     int dim2,
     MTL::ComputePipelineState* kernel) {
-  auto block = get_block_dims(dim0, dim1, dim2, kernel_block_pow2(kernel));
+  // get_block_dims caps the exponent rather than the product, so a block can
+  // still exceed the pipeline ceiling on its own. Shrink the largest axis
+  // until the group fits what this kernel actually reports.
+  auto block = get_block_dims(dim0, dim1, dim2, kernel);
   auto width = block.width;
   auto height = block.height;
   auto depth = block.depth;
-  constexpr NS::UInteger safe_limit = 512;
-  while (width * height * depth > safe_limit) {
+  const NS::UInteger limit = kernel->maxTotalThreadsPerThreadgroup();
+  while (width * height * depth > limit) {
     if (width >= height && width >= depth && width > 1) {
       width /= 2;
     } else if (height >= depth && height > 1) {

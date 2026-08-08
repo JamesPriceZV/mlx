@@ -151,12 +151,12 @@ void RoPE::eval_gpu(
     grid_dims = MTL::Size(dim0, dim1, dim2);
   }
 
-  // Generated RoPE pipelines can have an effective Metal threadgroup ceiling
-  // below the generic 1024-thread block chosen by get_block_dims.
+  // Generated RoPE pipelines can report a threadgroup ceiling below the
+  // generic 1024-thread block chosen by get_block_dims.
   auto group_width = group_dims.width;
   auto group_height = group_dims.height;
   auto group_depth = group_dims.depth;
-  constexpr NS::UInteger safe_group_limit = 512;
+  const NS::UInteger safe_group_limit = kernel->maxTotalThreadsPerThreadgroup();
   while (group_width * group_height * group_depth > safe_group_limit) {
     if (group_width >= group_height && group_width >= group_depth && group_width > 1) {
       group_width /= 2;
