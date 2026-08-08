@@ -1,6 +1,7 @@
 // Copyright © 2023-2024 Apple Inc.
 
 #include <cstdlib>
+#include <dlfcn.h>
 #include <sstream>
 
 #define NS_PRIVATE_IMPLEMENTATION
@@ -302,6 +303,20 @@ void CommandEncoder::maybeInsertBarrier() {
 void CommandEncoder::dispatch_threadgroups(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
+  auto group_size = group_dims.width * group_dims.height * group_dims.depth;
+  if (group_size >= 1024) {
+    Dl_info info{};
+    dladdr(__builtin_return_address(0), &info);
+    fprintf(
+        stderr,
+        "MLX oversized threadgroups caller=%s group=%llu max=%llu\n",
+        info.dli_sname != nullptr ? info.dli_sname : "unknown",
+        static_cast<unsigned long long>(group_size),
+        static_cast<unsigned long long>(
+            current_kernel_ != nullptr
+                ? current_kernel_->maxTotalThreadsPerThreadgroup()
+                : 0));
+  }
   maybeInsertBarrier();
   stream_.buffer_ops++;
   enc_->dispatchThreadgroups(grid_dims, group_dims);
@@ -310,6 +325,20 @@ void CommandEncoder::dispatch_threadgroups(
 void CommandEncoder::dispatch_threads(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
+  auto group_size = group_dims.width * group_dims.height * group_dims.depth;
+  if (group_size >= 1024) {
+    Dl_info info{};
+    dladdr(__builtin_return_address(0), &info);
+    fprintf(
+        stderr,
+        "MLX oversized dispatch caller=%s group=%llu max=%llu\n",
+        info.dli_sname != nullptr ? info.dli_sname : "unknown",
+        static_cast<unsigned long long>(group_size),
+        static_cast<unsigned long long>(
+            current_kernel_ != nullptr
+                ? current_kernel_->maxTotalThreadsPerThreadgroup()
+                : 0));
+  }
   maybeInsertBarrier();
   stream_.buffer_ops++;
   enc_->dispatchThreads(grid_dims, group_dims);

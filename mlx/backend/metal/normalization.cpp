@@ -54,7 +54,7 @@ void RMSNorm::eval_gpu(
 
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
-  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 512);
+  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 256);
   std::string op_name = "rms";
   if (axis_size > looped_limit) {
     op_name += "_looped";
@@ -153,7 +153,7 @@ void RMSNormVJP::eval_gpu(
 
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
-  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 512);
+  const int looped_limit = std::min(RMS_LOOPED_LIMIT, n_reads * 256);
   std::string op_name = "vjp_rms";
   if (axis_size > looped_limit) {
     op_name += "_looped";

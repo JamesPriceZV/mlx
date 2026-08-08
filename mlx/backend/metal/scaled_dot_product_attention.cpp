@@ -326,6 +326,18 @@ void sdpa_full_self_attention_metal(
   compute_encoder.dispatch_threadgroups(grid_dims, group_dims);
 }
 
+void sdpa_vector_2pass(
+    const Stream& s,
+    metal::Device& d,
+    const array& q,
+    const array& k,
+    const array& v,
+    array& out,
+    float scale,
+    bool do_causal,
+    const std::optional<array>& mask,
+    const std::optional<array>& sinks);
+
 void sdpa_vector(
     const Stream& s,
     metal::Device& d,
@@ -380,6 +392,11 @@ void sdpa_vector(
   // Get the kernel
   auto& compute_encoder = d.get_command_encoder(s.index);
   auto kernel = d.get_kernel(kname, hash_name, func_consts);
+  if (kernel->maxTotalThreadsPerThreadgroup() < 1024) {
+    sdpa_vector_2pass(
+        s, d, q, k, v, out, scale, do_causal, mask, sinks);
+    return;
+  }
   compute_encoder.set_compute_pipeline_state(kernel);
 
   // Set its arguments

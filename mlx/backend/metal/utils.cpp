@@ -63,6 +63,20 @@ MTL::Size get_block_dims(int dim0, int dim1, int dim2, int pow2) {
   return MTL::Size(std::get<0>(dims), std::get<1>(dims), std::get<2>(dims));
 }
 
+MTL::Size get_block_dims(
+    int dim0,
+    int dim1,
+    int dim2,
+    MTL::ComputePipelineState* kernel) {
+  auto max_threads = std::min<NS::UInteger>(
+      kernel->maxTotalThreadsPerThreadgroup(), 1024);
+  int pow2 = 0;
+  while (pow2 < 10 && (size_t{1} << (pow2 + 1)) <= max_threads) {
+    ++pow2;
+  }
+  return get_block_dims(dim0, dim1, dim2, pow2);
+}
+
 MTL::Size get_2d_grid_dims(const Shape& shape, const Strides& strides) {
   Dims dims = get_2d_grid_dims_common(shape, strides);
   return MTL::Size(std::get<0>(dims), std::get<1>(dims), std::get<2>(dims));

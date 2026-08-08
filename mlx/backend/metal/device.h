@@ -49,6 +49,7 @@ struct MLX_API CommandEncoder {
   void set_buffer(const MTL::Buffer* buf, int idx, int64_t offset = 0);
 
   void set_compute_pipeline_state(MTL::ComputePipelineState* kernel) {
+    current_kernel_ = kernel;
     enc_->setComputePipelineState(kernel);
   }
 
@@ -112,6 +113,7 @@ struct MLX_API CommandEncoder {
  private:
   DeviceStream& stream_;
   MTL::ComputeCommandEncoder* enc_;
+  MTL::ComputePipelineState* current_kernel_{nullptr};
   bool needs_barrier_{false};
   bool concurrent_{false};
   std::unordered_set<MTL::Resource*> prev_outputs_;

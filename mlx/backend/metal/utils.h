@@ -15,6 +15,11 @@ MLX_API std::string type_to_name(const array& a);
 
 // Compute the grid and block dimensions, check backend/common/utils.h for docs.
 MTL::Size get_block_dims(int dim0, int dim1, int dim2, int pow2 = 10);
+MTL::Size get_block_dims(
+    int dim0,
+    int dim1,
+    int dim2,
+    MTL::ComputePipelineState* kernel);
 MTL::Size get_2d_grid_dims(const Shape& shape, const Strides& strides);
 MTL::Size
 get_2d_grid_dims(const Shape& shape, const Strides& strides, size_t divisor);
