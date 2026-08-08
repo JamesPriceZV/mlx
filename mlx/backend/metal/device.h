@@ -62,7 +62,16 @@ struct MLX_API CommandEncoder {
 
   template <typename Vec, typename = std::enable_if_t<is_vector_v<Vec>>>
   void set_vector_bytes(const Vec& vec, size_t nelems, int idx) {
-    enc_->setBytes(vec.data(), nelems * sizeof(typename Vec::value_type), idx);
+    using Value = typename Vec::value_type;
+    if (nelems == 0) {
+      // Metal validation rejects setBytes(nullptr, 0, ...). Several indexing
+      // specializations intentionally carry an empty metadata vector whose
+      // binding is not read by the kernel, so bind one zero sentinel instead.
+      static const Value empty_value{};
+      enc_->setBytes(&empty_value, sizeof(Value), idx);
+      return;
+    }
+    enc_->setBytes(vec.data(), nelems * sizeof(Value), idx);
   }
   template <typename Vec, typename = std::enable_if_t<is_vector_v<Vec>>>
   void set_vector_bytes(const Vec& vec, int idx) {
