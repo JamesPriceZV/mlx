@@ -55,24 +55,28 @@ void RMSNorm::eval_gpu(
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
   const int looped_limit = RMS_LOOPED_LIMIT;
-  std::string op_name = "rms";
-  if (axis_size > looped_limit) {
-    op_name += "_looped";
-  }
-  op_name += type_to_name(out);
+  size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
+  size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
+  size_t single_row_threadgroup_size = simd_size * simds_needed;
+  bool use_looped_kernel = axis_size > looped_limit;
+  auto kernel_name = [&out](bool looped) {
+    return std::string(looped ? "rms_looped" : "rms") + type_to_name(out);
+  };
   auto& compute_encoder = d.get_command_encoder(s.index);
   {
-    auto kernel = d.get_kernel(op_name);
+    auto kernel = d.get_kernel(kernel_name(use_looped_kernel));
+    if (!use_looped_kernel &&
+        single_row_threadgroup_size >
+            kernel->maxTotalThreadsPerThreadgroup()) {
+      use_looped_kernel = true;
+      kernel = d.get_kernel(kernel_name(true));
+    }
 
     MTL::Size grid_dims, group_dims;
-    if (axis_size <= looped_limit) {
-      size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
-      size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
-      size_t threadgroup_size = simd_size * simds_needed;
-      assert(threadgroup_size <= kernel->maxTotalThreadsPerThreadgroup());
-      size_t n_threads = n_rows * threadgroup_size;
+    if (!use_looped_kernel) {
+      size_t n_threads = n_rows * single_row_threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
-      group_dims = MTL::Size(threadgroup_size, 1, 1);
+      group_dims = MTL::Size(single_row_threadgroup_size, 1, 1);
     } else {
       size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
@@ -153,30 +157,38 @@ void RMSNormVJP::eval_gpu(
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
   const int looped_limit = RMS_LOOPED_LIMIT;
-  std::string op_name = "vjp_rms";
-  if (axis_size > looped_limit) {
-    op_name += "_looped";
-  }
-  op_name += type_to_name(gx);
-
-  std::string hash_name = op_name + ((has_w) ? "_w" : "_now");
+  size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
+  size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
+  size_t single_row_threadgroup_size = simd_size * simds_needed;
+  bool use_looped_kernel = axis_size > looped_limit;
   metal::MTLFCList func_consts = {
       {&has_w, MTL::DataType::DataTypeBool, 20},
+  };
+  auto kernel_name = [&gx](bool looped) {
+    return std::string(looped ? "vjp_rms_looped" : "vjp_rms") +
+        type_to_name(gx);
+  };
+  auto get_kernel = [&d, &kernel_name, &func_consts, has_w](bool looped) {
+    auto op_name = kernel_name(looped);
+    auto hash_name = op_name + ((has_w) ? "_w" : "_now");
+    return d.get_kernel(op_name, hash_name, func_consts);
   };
 
   auto& compute_encoder = d.get_command_encoder(s.index);
   {
-    auto kernel = d.get_kernel(op_name, hash_name, func_consts);
+    auto kernel = get_kernel(use_looped_kernel);
+    if (!use_looped_kernel &&
+        single_row_threadgroup_size >
+            kernel->maxTotalThreadsPerThreadgroup()) {
+      use_looped_kernel = true;
+      kernel = get_kernel(true);
+    }
 
     MTL::Size grid_dims, group_dims;
-    if (axis_size <= looped_limit) {
-      size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
-      size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
-      size_t threadgroup_size = simd_size * simds_needed;
-      assert(threadgroup_size <= kernel->maxTotalThreadsPerThreadgroup());
-      size_t n_threads = n_rows * threadgroup_size;
+    if (!use_looped_kernel) {
+      size_t n_threads = n_rows * single_row_threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
-      group_dims = MTL::Size(threadgroup_size, 1, 1);
+      group_dims = MTL::Size(single_row_threadgroup_size, 1, 1);
     } else {
       size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
