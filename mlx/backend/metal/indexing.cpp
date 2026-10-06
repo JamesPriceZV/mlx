@@ -117,7 +117,7 @@ void Gather::eval_gpu(const std::vector<array>& inputs, array& out) {
 
     size_t dim_x = (slice_size + work_per_thread - 1) / work_per_thread;
     size_t dim_y = indices.size();
-    auto group_dims = get_block_dims(dim_x, dim_y, 1);
+    auto group_dims = get_block_dims(dim_x, dim_y, 1, kernel);
     MTL::Size grid_dims = MTL::Size(dim_x, dim_y, 1);
 
     compute_encoder.set_input_array(src, 0);
@@ -181,7 +181,7 @@ void Gather::eval_gpu(const std::vector<array>& inputs, array& out) {
     }
   }
   size_t dim2 = slice_size;
-  auto group_dims = get_block_dims(dim0, dim1, dim2);
+  auto group_dims = get_block_dims(dim0, dim1, dim2, kernel);
   MTL::Size grid_dims = MTL::Size(dim0, dim1, dim2);
 
   // Collect all idx shapes and strides into one place
@@ -498,7 +498,7 @@ void GatherAxis::eval_gpu(const std::vector<array>& inputs, array& out) {
   }
 
   int idx_ax_size = idx.shape(axis_);
-  auto group_dims = get_block_dims(size_post, idx_ax_size, size_pre);
+  auto group_dims = get_block_dims(size_post, idx_ax_size, size_pre, kernel);
   MTL::Size grid_dims = MTL::Size(size_post, idx_ax_size, size_pre);
 
   // Set all the buffers

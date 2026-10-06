@@ -1,6 +1,8 @@
 // Copyright © 2023-2024 Apple Inc.
 
+#include <cstdio>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <sstream>
 
 #include <fmt/format.h>
@@ -304,6 +306,39 @@ MTL::Library* load_library(
   throw std::runtime_error(msg.str());
 }
 
+// Opt-in diagnostic. Enable with MLX_LOG_OVERSIZED=1.
+bool mlx_log_oversized_dispatch() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("MLX_LOG_OVERSIZED");
+    return value != nullptr && value[0] == '1';
+  }();
+  return enabled;
+}
+
+void report_oversized_dispatch(
+    MTL::ComputePipelineState* kernel,
+    MTL::Size group_dims,
+    const char* label,
+    const void* return_address) {
+  if (!mlx_log_oversized_dispatch() || kernel == nullptr) {
+    return;
+  }
+  auto group_size = group_dims.width * group_dims.height * group_dims.depth;
+  if (group_size <= kernel->maxTotalThreadsPerThreadgroup()) {
+    return;
+  }
+  Dl_info info{};
+  dladdr(return_address, &info);
+  std::fprintf(
+      stderr,
+      "MLX oversized %s caller=%s group=%llu max=%llu\n",
+      label,
+      info.dli_sname != nullptr ? info.dli_sname : "unknown",
+      static_cast<unsigned long long>(group_size),
+      static_cast<unsigned long long>(
+          kernel->maxTotalThreadsPerThreadgroup()));
+}
+
 } // namespace
 
 CommandEncoder::CommandEncoder(
@@ -408,6 +443,11 @@ void CommandEncoder::maybeInsertBarrier() {
 void CommandEncoder::dispatch_threadgroups(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
+  report_oversized_dispatch(
+      current_kernel_,
+      group_dims,
+      "threadgroups",
+      __builtin_return_address(0));
   maybeInsertBarrier();
   buffer_ops_++;
   get_command_encoder()->dispatchThreadgroups(grid_dims, group_dims);
@@ -416,6 +456,8 @@ void CommandEncoder::dispatch_threadgroups(
 void CommandEncoder::dispatch_threads(
     MTL::Size grid_dims,
     MTL::Size group_dims) {
+  report_oversized_dispatch(
+      current_kernel_, group_dims, "dispatch", __builtin_return_address(0));
   maybeInsertBarrier();
   buffer_ops_++;
   get_command_encoder()->dispatchThreads(grid_dims, group_dims);

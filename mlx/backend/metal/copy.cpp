@@ -153,12 +153,7 @@ void copy_gpu_inplace(
       }
     }
 
-    // NB assuming thread_group_size is a power of 2 larger than 32 x 32
-    if (thread_group_size != 1024) {
-      throw std::runtime_error("[Metal::copy] Must use 1024 sized block");
-    }
-
-    auto group_dims = get_block_dims(dim0, dim1, rest);
+    auto group_dims = get_block_dims(dim0, dim1, rest, kernel);
     MTL::Size grid_dims = MTL::Size(dim0, dim1, rest);
     compute_encoder.dispatch_threads(grid_dims, group_dims);
   } else {

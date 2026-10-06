@@ -134,7 +134,7 @@ void RoPE::eval_gpu(
     compute_encoder.set_bytes(out_strides, 1, 4);
     uint32_t dim0 = dims_ / 2;
     uint32_t dim1 = B * N;
-    group_dims = get_block_dims(dim0, dim1, 1);
+    group_dims = get_block_dims(dim0, dim1, 1, kernel);
     grid_dims = MTL::Size(dim0, dim1, 1);
   } else {
     compute_encoder.set_bytes(strides, 3, 4);
@@ -148,7 +148,7 @@ void RoPE::eval_gpu(
     uint32_t dim0 = dims_ / 2;
     uint32_t dim1 = T;
     uint32_t dim2 = B * ((N + n_per_thread - 1) / n_per_thread);
-    group_dims = get_block_dims(dim0, dim1, dim2);
+    group_dims = get_block_dims(dim0, dim1, dim2, kernel);
     grid_dims = MTL::Size(dim0, dim1, dim2);
   }
 

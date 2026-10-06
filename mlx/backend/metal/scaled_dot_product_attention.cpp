@@ -361,6 +361,18 @@ void sdpa_full_self_attention_metal(
   compute_encoder.dispatch_threadgroups(grid_dims, group_dims);
 }
 
+void sdpa_vector_2pass(
+    const Stream& s,
+    metal::Device& d,
+    const array& q,
+    const array& k,
+    const array& v,
+    array& out,
+    float scale,
+    bool do_causal,
+    const std::optional<array>& mask,
+    const std::optional<array>& sinks);
+
 void sdpa_vector(
     const Stream& s,
     metal::Device& d,
@@ -415,6 +427,12 @@ void sdpa_vector(
   // Get the kernel
   auto& compute_encoder = metal::get_command_encoder(s);
   auto kernel = d.get_kernel(kname, hash_name, func_consts);
+  // This launch is 1024 threads wide. A pipeline that cannot hold that uses
+  // the 2-pass vector kernel. Its second pass still requests 1024 threads.
+  if (kernel->maxTotalThreadsPerThreadgroup() < 1024) {
+    sdpa_vector_2pass(s, d, q, k, v, out, scale, do_causal, mask, sinks);
+    return;
+  }
   check_kernel_threadgroup_size(kernel, group_dims, hash_name);
   compute_encoder.set_compute_pipeline_state(kernel);
 

@@ -107,10 +107,7 @@ void ternary_op_gpu_inplace(
       compute_encoder.set_vector_bytes(strides_c, 6);
     }
 
-    if (thread_group_size != 1024) {
-      throw std::runtime_error("[Metal::ternary] Must use 1024 sized block");
-    }
-    MTL::Size group_dims = get_block_dims(dim0, dim1, rest);
+    MTL::Size group_dims = get_block_dims(dim0, dim1, rest, kernel);
     MTL::Size grid_dims = MTL::Size(dim0, dim1, rest);
     compute_encoder.dispatch_threads(grid_dims, group_dims);
   } else {

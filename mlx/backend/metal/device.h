@@ -57,13 +57,21 @@ class MLX_API CommandEncoder {
   void maybeInsertBarrier();
 
   void set_compute_pipeline_state(MTL::ComputePipelineState* kernel) {
+    current_kernel_ = kernel;
     get_command_encoder()->setComputePipelineState(kernel);
   }
 
   template <typename Vec, typename = std::enable_if_t<is_vector_v<Vec>>>
   void set_vector_bytes(const Vec& vec, size_t nelems, int idx) {
-    get_command_encoder()->setBytes(
-        vec.data(), nelems * sizeof(typename Vec::value_type), idx);
+    using Value = typename Vec::value_type;
+    if (nelems == 0) {
+      // Metal rejects setBytes(nullptr, 0). Empty metadata is unread, so bind
+      // one zero value instead.
+      static const Value empty_value{};
+      get_command_encoder()->setBytes(&empty_value, sizeof(Value), idx);
+      return;
+    }
+    get_command_encoder()->setBytes(vec.data(), nelems * sizeof(Value), idx);
   }
   template <typename Vec, typename = std::enable_if_t<is_vector_v<Vec>>>
   void set_vector_bytes(const Vec& vec, int idx) {
@@ -127,6 +135,7 @@ class MLX_API CommandEncoder {
   // The members are used within a single ComputeCommandEncoder and will be
   // reset after calling end_encoding().
   NS::SharedPtr<MTL::ComputeCommandEncoder> encoder_;
+  MTL::ComputePipelineState* current_kernel_{nullptr};
   NS::SharedPtr<MTL::Fence> fence_;
   bool needs_barrier_{false};
   bool concurrent_{false};

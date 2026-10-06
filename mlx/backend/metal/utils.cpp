@@ -1,5 +1,7 @@
 // Copyright © 2023-2024 Apple Inc.
 
+#include <algorithm>
+
 #include "mlx/backend/metal/utils.h"
 #include "mlx/backend/common/utils.h"
 
@@ -61,6 +63,40 @@ std::string type_to_name(const array& a) {
 MTL::Size get_block_dims(int dim0, int dim1, int dim2, int pow2) {
   Dims dims = get_block_dims_common(dim0, dim1, dim2, pow2);
   return MTL::Size(std::get<0>(dims), std::get<1>(dims), std::get<2>(dims));
+}
+
+MTL::Size get_block_dims(
+    int dim0,
+    int dim1,
+    int dim2,
+    MTL::ComputePipelineState* kernel) {
+  // The block helper is defined up to 1024 threads. A compiled pipeline may
+  // allow fewer, and that lower ceiling is the one that must be met.
+  const NS::UInteger max_threads = std::min<NS::UInteger>(
+      kernel->maxTotalThreadsPerThreadgroup(), 1024);
+  int pow2 = 0;
+  while (pow2 < 10 && (size_t{1} << (pow2 + 1)) <= max_threads) {
+    ++pow2;
+  }
+  auto block = get_block_dims(dim0, dim1, dim2, pow2);
+
+  // pow2 is advisory: the common helper can still stop at exponent 10, so
+  // clamp the product to the pipeline ceiling.
+  auto width = block.width;
+  auto height = block.height;
+  auto depth = block.depth;
+  while (width * height * depth > max_threads) {
+    if (width >= height && width >= depth && width > 1) {
+      width /= 2;
+    } else if (height >= depth && height > 1) {
+      height /= 2;
+    } else if (depth > 1) {
+      depth /= 2;
+    } else {
+      break;
+    }
+  }
+  return MTL::Size(width, height, depth);
 }
 
 MTL::Size get_2d_grid_dims(const Shape& shape, const Strides& strides) {

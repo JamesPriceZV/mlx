@@ -55,24 +55,30 @@ void RMSNorm::eval_gpu(
   const int simd_size = 32;
   const int n_reads = RMS_N_READS;
   const int looped_limit = RMS_LOOPED_LIMIT;
-  std::string op_name = "rms";
-  if (axis_size > looped_limit) {
-    op_name += "_looped";
-  }
-  op_name += type_to_name(out);
+  size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
+  size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
+  size_t single_row_threadgroup_size = simd_size * simds_needed;
+  // The single-row kernel has no element loop, so a short pipeline uses the
+  // looped kernel instead of launching an illegal group.
+  bool use_looped_kernel = axis_size > looped_limit;
+  auto kernel_name = [&out](bool looped) {
+    return std::string(looped ? "rms_looped" : "rms") + type_to_name(out);
+  };
   auto& compute_encoder = metal::get_command_encoder(s);
   {
-    auto kernel = d.get_kernel(op_name);
+    auto kernel = d.get_kernel(kernel_name(use_looped_kernel));
+    if (!use_looped_kernel &&
+        single_row_threadgroup_size >
+            kernel->maxTotalThreadsPerThreadgroup()) {
+      use_looped_kernel = true;
+      kernel = d.get_kernel(kernel_name(true));
+    }
 
     MTL::Size grid_dims, group_dims;
-    if (axis_size <= looped_limit) {
-      size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
-      size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
-      size_t threadgroup_size = simd_size * simds_needed;
-      assert(threadgroup_size <= kernel->maxTotalThreadsPerThreadgroup());
-      size_t n_threads = n_rows * threadgroup_size;
+    if (!use_looped_kernel) {
+      size_t n_threads = n_rows * single_row_threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
-      group_dims = MTL::Size(threadgroup_size, 1, 1);
+      group_dims = MTL::Size(single_row_threadgroup_size, 1, 1);
     } else {
       size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
@@ -135,10 +141,39 @@ void RMSNormVJP::eval_gpu(
   auto axis_size = static_cast<uint32_t>(x.shape().back());
   int n_rows = x.data_size() / axis_size;
 
+  const int simd_size = 32;
+  const int n_reads = RMS_N_READS;
+  const int looped_limit = RMS_LOOPED_LIMIT;
+  size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
+  size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
+  size_t single_row_threadgroup_size = simd_size * simds_needed;
+  bool use_looped_kernel = axis_size > looped_limit;
+  metal::MTLFCList func_consts = {
+      {&has_w, MTL::DataType::DataTypeBool, 20},
+  };
+  auto kernel_name = [&gx](bool looped) {
+    return std::string(looped ? "vjp_rms_looped" : "vjp_rms") +
+        type_to_name(gx);
+  };
+  auto get_kernel = [&d, &kernel_name, &func_consts, has_w](bool looped) {
+    auto op_name = kernel_name(looped);
+    auto hash_name = op_name + ((has_w) ? "_w" : "_now");
+    return d.get_kernel(op_name, hash_name, func_consts);
+  };
+  auto kernel = get_kernel(use_looped_kernel);
+  if (!use_looped_kernel &&
+      single_row_threadgroup_size >
+          kernel->maxTotalThreadsPerThreadgroup()) {
+    use_looped_kernel = true;
+    kernel = get_kernel(true);
+  }
+
+  // Decide before allocating gw. The looped kernel writes one gradient row per
+  // input row. The grouped accumulator belongs only to the single-row kernel.
   const int target_groups = 512;
   uint32_t rows_per_group = 1;
   int n_groups = n_rows;
-  if (axis_size <= RMS_LOOPED_LIMIT) {
+  if (!use_looped_kernel) {
     rows_per_group = (n_rows + target_groups - 1) / target_groups;
     n_groups = (n_rows + rows_per_group - 1) / rows_per_group;
   }
@@ -154,32 +189,12 @@ void RMSNormVJP::eval_gpu(
   }
   gw.set_data(allocator::malloc(gw.nbytes()));
 
-  const int simd_size = 32;
-  const int n_reads = RMS_N_READS;
-  const int looped_limit = RMS_LOOPED_LIMIT;
-  std::string op_name = "vjp_rms";
-  if (axis_size > looped_limit) {
-    op_name += "_looped";
-  }
-  op_name += type_to_name(gx);
-
-  std::string hash_name = op_name + ((has_w) ? "_w" : "_now");
-  metal::MTLFCList func_consts = {
-      {&has_w, MTL::DataType::DataTypeBool, 20},
-  };
-
   {
-    auto kernel = d.get_kernel(op_name, hash_name, func_consts);
-
     MTL::Size grid_dims, group_dims;
-    if (axis_size <= looped_limit) {
-      size_t threadgroup_needed = (axis_size + n_reads - 1) / n_reads;
-      size_t simds_needed = (threadgroup_needed + simd_size - 1) / simd_size;
-      size_t threadgroup_size = simd_size * simds_needed;
-      assert(threadgroup_size <= kernel->maxTotalThreadsPerThreadgroup());
-      size_t n_threads = n_groups * threadgroup_size;
+    if (!use_looped_kernel) {
+      size_t n_threads = n_groups * single_row_threadgroup_size;
       grid_dims = MTL::Size(n_threads, 1, 1);
-      group_dims = MTL::Size(threadgroup_size, 1, 1);
+      group_dims = MTL::Size(single_row_threadgroup_size, 1, 1);
     } else {
       size_t threadgroup_size = kernel->maxTotalThreadsPerThreadgroup();
       size_t n_threads = n_rows * threadgroup_size;
@@ -197,7 +212,7 @@ void RMSNormVJP::eval_gpu(
     compute_encoder.set_bytes(eps_, 5);
     compute_encoder.set_bytes(axis_size, 6);
     compute_encoder.set_bytes(w_stride, 7);
-    if (axis_size <= looped_limit) {
+    if (!use_looped_kernel) {
       compute_encoder.set_bytes(static_cast<uint32_t>(n_rows), 8);
       compute_encoder.set_bytes(rows_per_group, 9);
     }
