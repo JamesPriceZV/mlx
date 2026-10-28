@@ -630,7 +630,13 @@ Device::Device() : device_(load_device()), residency_sets_(device_.get()) {
   default_library_ = NS::TransferPtr(load_default_library(device_.get()));
   arch_ = env::metal_gpu_arch();
   if (arch_.empty()) {
-    arch_ = std::string(device_->architecture()->name()->utf8String());
+    // The iOS Simulator's Metal device can report no architecture name;
+    // copying a null C string aborts, so fall back to "unknown" (default
+    // buffer limits below).
+    auto* a = device_->architecture();
+    auto* n = a ? a->name() : nullptr;
+    const char* s = n ? n->utf8String() : nullptr;
+    arch_ = (s && *s) ? std::string(s) : std::string("unknown");
   }
   int ag_tens = 0;
   int ag_ones = 0;
