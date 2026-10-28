@@ -68,12 +68,21 @@ MetalAllocator::MetalAllocator(Device& d)
   if (is_vm) {
     return;
   }
+  // Heaps with shared storage need unified memory. A device without it (for
+  // example the iOS Simulator's GPU) asserts in newHeap instead of returning
+  // nil, so skip the small-buffer heap there and use plain buffers, as for
+  // VMs above. Apple-silicon Macs and A-series devices are unified, unchanged.
+  if (!device_->hasUnifiedMemory()) {
+    return;
+  }
   auto pool = metal::new_scoped_memory_pool();
   auto heap_desc = MTL::HeapDescriptor::alloc()->init()->autorelease();
   heap_desc->setResourceOptions(resource_options);
   heap_desc->setSize(heap_size_);
   heap_ = NS::TransferPtr(device_->newHeap(heap_desc));
-  residency_sets_.insert(heap_.get());
+  if (heap_) {
+    residency_sets_.insert(heap_.get());
+  }
 }
 
 MetalAllocator::~MetalAllocator() = default;
