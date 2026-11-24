@@ -380,8 +380,20 @@ void View::eval_cpu(const std::vector<array>& inputs, array& out) {
       strides[i] *= ibytes;
       strides[i] /= obytes;
     }
-    out.copy_shared_buffer(
-        in, strides, in.flags(), in.data_size() * ibytes / obytes);
+    auto flags = in.flags();
+    auto data_size = in.data_size() * ibytes / obytes;
+    if (ibytes != obytes) {
+      // Last axis size can change contiguity
+      auto [_, row_contiguous, col_contiguous] =
+          check_contiguity(out.shape(), strides);
+      flags.row_contiguous = row_contiguous;
+      flags.col_contiguous = col_contiguous;
+      if (row_contiguous || col_contiguous) {
+        flags.contiguous = true;
+        data_size = out.size();
+      }
+    }
+    out.copy_shared_buffer(in, strides, flags, data_size);
   } else {
     auto tmp = array(
         in.shape(), in.dtype() == bool_ ? uint8 : in.dtype(), nullptr, {});

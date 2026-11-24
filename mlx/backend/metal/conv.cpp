@@ -3,6 +3,7 @@
 #include <cassert>
 #include <numeric>
 
+#include "mlx/backend/common/utils.h"
 #include "mlx/backend/gpu/copy.h"
 #include "mlx/backend/gpu/slicing.h"
 #include "mlx/backend/metal/binary.h"
@@ -802,8 +803,14 @@ void pad_and_slice_conv_3D_gpu(
   implicit_gemm_conv_3D_gpu(s, d, in, wt, intermediate, new_params);
 
   // Slice out
+  auto [_, row_contiguous, col_contiguous] =
+      check_contiguity(out.shape(), intermediate.strides());
+  bool contiguous = row_contiguous || col_contiguous;
   out.copy_shared_buffer(
-      intermediate, intermediate.strides(), {0}, intermediate.data_size());
+      intermediate,
+      intermediate.strides(),
+      {contiguous, row_contiguous, col_contiguous},
+      contiguous ? out.size() : intermediate.data_size());
 }
 
 void conv_2D_gpu(

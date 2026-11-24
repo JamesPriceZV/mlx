@@ -148,6 +148,7 @@ void shared_buffer_reshape(
     const Strides& out_strides,
     array& out) {
   auto flags = in.flags();
+  auto data_size = in.data_size();
   if (flags.row_contiguous) {
     // For row contiguous reshapes:
     // - Shallow copy the buffer
@@ -155,8 +156,18 @@ void shared_buffer_reshape(
     //    becomes col contiguous again.
     auto max_dim = std::max_element(out.shape().begin(), out.shape().end());
     flags.col_contiguous = out.size() <= 1 || out.size() == *max_dim;
+  } else {
+    // New shape can change contiguity
+    auto [_, row_contiguous, col_contiguous] =
+        check_contiguity(out.shape(), out_strides);
+    flags.row_contiguous = row_contiguous;
+    flags.col_contiguous = col_contiguous;
+    if (row_contiguous || col_contiguous) {
+      flags.contiguous = true;
+      data_size = out.size();
+    }
   }
-  out.copy_shared_buffer(in, out_strides, flags, in.data_size());
+  out.copy_shared_buffer(in, out_strides, flags, data_size);
 }
 
 void Split::eval(
